@@ -1,0 +1,118 @@
+================================================================================
+KALMAN FİLTRESİ: ELDE / TAHTADA ÇÖZÜMLÜ SAYISAL ÖRNEK VE AKIŞ ŞEMASI
+Proje: İHA Kamera Görüntülerinde Kalman Filtresi ve YZ Destekli Hedef Takibi
+================================================================================
+
+1. SENARYO TANIMI (TAHTAYA YAZILACAK BAŞLANGIÇ VERİLERİ)
+--------------------------------------------------------------------------------
+Tek boyutlu eksende (x konumu ve v hızı) hareket eden bir aracımız var.
+Araç başlangıçta x = 10 m konumunda ve v = 2 m/sn sabit hızla sağa gidiyor.
+Örnekleme zaman adımı: dt = 1 saniye.
+
+* Başlangıç Durum Vektörü (k = 0):
+      x_{0|0} = [ 10 ]   --> Konum (px) = 10 m
+                [  2 ]   --> Hız   (vx) = 2 m/sn
+
+* Başlangıç Hata Kovaryans Matrisi (Belirsizlik):
+      P_{0|0} = [ 4   0 ]  --> Konum belirsizliği = 4, Hız belirsizliği = 1
+                [ 0   1 ]
+
+* Sistem Matrisleri:
+      F = [ 1   1 ]   (Durum Geçiş Matrisi: x_yeni = x_eski + v*dt, v_yeni = v_eski)
+          [ 0   1 ]
+
+      H = [ 1   0 ]   (Gözlem Matrisi: Sensör sadece konumu ölçer, hızı ölçemez)
+
+      Q = [ 0   0 ]   (Süreç Gürültüsü: Basitlik için 0 alındı)
+          [ 0   0 ]
+
+
+2. ADIM 1: TAHMİN AŞAMASI (TIME UPDATE / PREDICT) -> k = 1 ANINA GEÇİŞ
+--------------------------------------------------------------------------------
+Henüz yeni sensör ölçümü gelmeden, fiziksel hareket denklemi (F) ile araç 1 sn
+ileri taşınır (Önsel / A Priori Tahmin):
+
+  1) Önsel Durum Tahmini:
+     x_{1|0} = F * x_{0|0} = [ 1  1 ] * [ 10 ] = [ 10 + 2 ] = [ 12 ]
+                             [ 0  1 ]   [  2 ]   [  0 + 2 ]   [  2 ]
+     --> YORUM: Filtre "Araç 1. saniyede x = 12 m konumunda olmalı" diyor.
+
+  2) Önsel Belirsizlik (Kovaryans) Tahmini:
+     P_{1|0} = F * P_{0|0} * F^T + Q
+             = [ 1  1 ] * [ 4  0 ] * [ 1  0 ] = [ 4  1 ] * [ 1  0 ] = [ 5  1 ]
+               [ 0  1 ]   [ 0  1 ]   [ 1  1 ]   [ 0  1 ]   [ 1  1 ]   [ 1  1 ]
+     --> YORUM: Konum belirsizliği, hız belirsizliği eklendiği için 4'ten 5'e çıktı.
+
+
+3. ADIM 2: ÖLÇÜM GÜNCELLEMESİ (MEASUREMENT UPDATE / CORRECTION)
+--------------------------------------------------------------------------------
+k = 1 anında sensörün araca ait konumu z_1 = 15 m olarak ölçtüğünü varsayalım
+(Gerçek konum 12 m iken sensör +3 m gürültülü ölçüm yapmış).
+
+Şimdi aynı ölçümün HASSAS KAMERA ve GÜRÜLTÜLÜ RADAR için nasıl işlendiğine bakalım:
+
+--------------------------------------------------------------------------------
+DURUM A: HASSAS KAMERA ÖLÇÜMÜ (Düşük Gürültü: R_cam = 1)
+--------------------------------------------------------------------------------
+  1) İnovasyon (Ölçüm Artığı):
+     y = z_1 - H * x_{1|0} = 15 - (1*12 + 0*2) = +3 m
+
+  2) İnovasyon Kovaryansı (S):
+     S = H * P_{1|0} * H^T + R_cam = 5 + 1 = 6
+
+  3) Optimal Kalman Kazancı (K):
+     K = P_{1|0} * H^T * S^(-1) = [ 5 ] * (1 / 6) = [ 0.83 ]
+                                  [ 1 ]             [ 0.17 ]
+     --> YORUM: Kamera gürültüsü çok düşük olduğu için Kalman kazancı yüksek çıktı.
+                Filtre sensöre %83, kendi tahminine %17 güveniyor!
+
+  4) Düzeltilmiş Sonsal Konum ve Hız:
+     x_{1|1} = x_{1|0} + K * y = [ 12 ] + [ 0.83 ] * (3) = [ 14.50 m    ]
+                                 [  2 ]   [ 0.17 ]         [  2.51 m/sn ]
+
+--------------------------------------------------------------------------------
+DURUM B: GÜRÜLTÜLÜ RADAR ÖLÇÜMÜ (Yüksek Gürültü: R_radar = 20)
+--------------------------------------------------------------------------------
+  1) İnovasyon (Ölçüm Artığı):
+     y = 15 - 12 = +3 m
+
+  2) İnovasyon Kovaryansı (S):
+     S = H * P_{1|0} * H^T + R_radar = 5 + 20 = 25
+
+  3) Optimal Kalman Kazancı (K):
+     K = P_{1|0} * H^T * S^(-1) = [ 5 ] * (1 / 25) = [ 0.20 ]
+                                  [ 1 ]              [ 0.04 ]
+     --> YORUM: Radar gürültüsü yüksek olduğu için kazanç otomatik olarak düştü.
+                Filtre gürültülü radara sadece %20 güveniyor, kendi tahminine %80 güveniyor!
+
+  4) Düzeltilmiş Sonsal Konum ve Hız:
+     x_{1|1} = x_{1|0} + K * y = [ 12 ] + [ 0.20 ] * (3) = [ 12.60 m    ]
+                                 [  2 ]   [ 0.04 ]         [  2.12 m/sn ]
+     --> SONUÇ: Radar 15 m gibi hatalı sıçrama yapsa bile Kalman çıktıyı 12.60 m'de
+                tutarak gürültüyü büyük oranda sönümledi.
+
+
+4. TAHTAYA ÇİZİLECEK ÇOKLU-SENSÖR KALMAN AKIŞ ŞEMASI
+--------------------------------------------------------------------------------
+
+      [Başlangıç Durumu: x_0, P_0]
+                   │
+                   ▼
+   ┌───────────────────────────────┐
+   │ 1. TAHMİN AŞAMASI (Predict)   │ ──► x̂ = F * x  (Fiziksel hareketle ileri sar)
+   │    P = F * P * F^T + Q        │
+   └───────────────┬───────────────┘
+                   │
+                   ▼
+          Kamera Açık mı? ────(HAYIR / Bulut Arkası)────► Sadece Radar (R_radar=324)
+                   │                                      ile güncelle (Radar da yoksa
+                (EVET)                                    doğrudan Predict'i kullan)
+                   ▼
+   ┌───────────────────────────────┐
+   │ 2. GÜNCELLEME (Update)        │ ──► K = P*H^T * (H*P*H^T + R)^(-1)  (Kazanç)
+   │    Kamera (R_cam=9) + Radar   │ ──► x̂ = x̂ + K * (z - H*x̂)           (Düzeltme)
+   └───────────────┬───────────────┘
+                   │
+                   └────► Bir sonraki video karesi (k + 1) için döngüye dön
+
+================================================================================
